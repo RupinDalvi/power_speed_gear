@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Cyclist Power · Speed · Gear Advisor</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <!-- Leaflet CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
+  <style>
+    :root {
+      --primary:#1867c0;--secondary:#f0f4fb;--accent:#eaf1fb;--border:#bfd6ee;--danger:#d32f2f;font-size:16px;
+    }
+    html,body{margin:0;padding:0;background:var(--secondary);height:100%;}
+    body{display:flex;flex-direction:column;font-family:system-ui,sans-serif;}
+    header{background:var(--primary);color:#fff;text-align:center;font-weight:600;font-size:1.6rem;padding:.8rem 0;border-radius:0 0 1rem 1rem;}
+    main{flex:1;overflow:auto;max-width:680px;width:95vw;margin:1rem auto;background:#fff;border-radius:1rem;box-shadow:0 4px 24px #1867c01b;padding:1.5rem;}
+    form{display:flex;flex-direction:column;gap:1rem;margin-bottom:1rem;}
+    .row{display:flex;flex-wrap:wrap;gap:1rem;align-items:center;}
+    label{flex:1 0 130px;font-size:1rem;}
+    input[type="number"], input[type="email"], select, input[type="text"]{
+      flex:1 0 90px;padding:.4rem;border:1px solid var(--border);border-radius:.5rem;font-size:1rem;background:var(--accent);
+    }
+    input[type="checkbox"]{width:1.2rem;height:1.2rem;}
+    button{padding:.8rem 1.5rem;font-size:1.1rem;border:none;border-radius:.7rem;background:var(--primary);color:#fff;cursor:pointer;transition:.2s;}
+    button:disabled{background:#bbb;cursor:not-allowed;}
+    #live-stats,#settings-summary{background:var(--accent);border-left:4px solid var(--primary);padding:.8rem;margin-bottom:1rem;border-radius:.5rem;font-size:1rem;}
+    #live-stats strong{color:var(--primary);}#csv-download{margin-top:1rem;font-size:1rem;}
+    #postEmailSection{margin-top:1rem;padding:1rem;background:var(--accent);border-radius:.7rem;border-left:4px solid var(--primary);display:none;}
+    .emailjs-fields{margin-top:.6rem;margin-bottom:.3rem;display:flex;flex-wrap:wrap;gap:1rem;} .emailjs-fields label{flex:0 0 120px;font-size:.97rem;} .emailjs-fields input{width:175px;font-size:.96rem;}
+    #mapModal{position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.6);display:none;align-items:center;justify-content:center;z-index:1000;}
+    #mapContainer{width:90vw;height:80vh;max-width:720px;max-height:520px;border-radius:1rem;overflow:hidden;box-shadow:0 4px 20px #0003;position:relative;}
+    #mapContainer .closeBtn{position:absolute;top:.5rem;right:.5rem;background:#fff;border:none;font-size:1.2rem;padding:.2rem .6rem;border-radius:.3rem;cursor:pointer;z-index:1001;box-shadow:0 2px 6px #0002;}
+    #map{width:100%;height:100%;}
+    @media(max-width:480px){label{flex-basis:100%;}button{width:100%;}#mapContainer{width:98vw;height:80vh;}.emailjs-fields{flex-direction:column;}}
+  </style>
+</head>
+<body>
+<header>Cyclist Power · Speed · Gear Advisor</header>
+<main>
+  <!-- ===== Settings form ===== -->
+  <form id="settings" autocomplete="off">
+    <!-- Basic mode selection & sensor connection -->
+    <div class="row">
+      <label for="mode">Mode:</label>
+      <select id="mode">
+        <option value="simulate">Simulate</option>
+        <option value="gps">Use GPS</option>
+      </select>
+      <label><input type="checkbox" id="auto_pose" checked> Auto Pose CdA</label>
+    </div>
+
+    <!-- Mass & power -->
+    <div class="row">
+      <label>Rider mass (kg):</label><input type="number" id="rider_mass" value="74" min="30" max="150">
+      <label>Bike mass (kg):</label><input type="number" id="bike_mass" value="12" min="5" max="30" step="0.1">
+    </div>
+    <div class="row">
+      <label>FTP (W):</label><input type="number" id="ftp" value="222" min="100" max="600">
+      <label>CRR:</label><input type="number" id="crr" value="0.004" min="0.002" max="0.01" step="0.0001">
+    </div>
+
+    <!-- Aerodynamics -->
+    <div class="row"><label for="cda">Base CdA (m²):</label><input type="number" id="cda" value="0.32" min="0.2" max="0.6" step="0.01"></div>
+
+    <!-- Cadence preference -->
+    <div class="row">
+      <label>Preferred cadence (rpm):</label>
+      <input type="number" id="cad_min" value="85" min="50" max="120" step="1" style="max-width:80px;">
+      <span style="align-self:center;">–</span>
+      <input type="number" id="cad_max" value="95" min="60" max="130" step="1" style="max-width:80px;">
+    </div>
+
+    <!-- Drivetrain -->
+    <div class="row">
+      <label>Front chainrings (T):</label><input type="text" id="front_rings" value="48,34" placeholder="e.g. 50,34">
+    </div>
+    <div class="row">
+      <label>Rear cassette (T):</label><input type="text" id="rear_cassette" value="11,13,15,18,21,24,28,34" placeholder="comma‑sep teeth">
+    </div>
+    <div class="row">
+      <label>Wheel circumference (m):</label><input type="number" step="0.001" id="wheel_circ" value="2.105">
+      <label>Crank length (mm):</label><input type="number" id="crank_len" value="170" step="1">
+    </div>
+
+    <!-- Optional e‑mail -->
+    <div class="row"><label for="email">Email (optional):</label><input type="email" id="email" placeholder="you@example.com"></div>
+
+    <!-- Session buttons -->
+    <div class="row" style="justify-content:center;gap:2rem;">
+      <button type="button" id="start-btn">Start Session</button>
+      <button type="button" id="stop-btn" disabled>Stop Session</button>
+      <button type="button" id="connectCadenceBtn">Connect Cadence Sensor</button>
+    </div>
+  </form>
+
+  <!-- Quick summary & live stats -->
+  <div id="settings-summary"></div>
+  <div id="live-stats"></div>
+  <div id="summary"></div>
+  <div id="csv-download"></div>
+
+  <!-- EmailJS post‑send panel -->
+  <div id="postEmailSection">
+    <label for="post_email">Enter email to send CSV:</label>
+    <input type="email" id="post_email" placeholder="you@example.com" style="padding:.4rem;margin-right:.5rem;">
+    <button id="send-post-btn" style="padding:.6rem 1rem;font-size:1rem;">Send CSV</button>
+    <div id="emailjs-instructions">
+      To enable email sending, enter your own <a href="https://dashboard.emailjs.com/" target="_blank">EmailJS</a> credentials below (they remain private and are not shown):
+    </div>
+    <div class="emailjs-fields">
+      <label for="emailjs_user_id">User ID:</label><input type="password" id="emailjs_user_id" placeholder="EmailJS User ID" autocomplete="off">
+      <label for="emailjs_service_id">Service ID:</label><input type="password" id="emailjs_service_id" placeholder="Service ID" autocomplete="off">
+      <label for="emailjs_template_id">Template ID:</label><input type="password" id="emailjs_template_id" placeholder="Template ID" autocomplete="off">
+    </div>
+  </div>
+</main>
+
+<!-- Map modal -->
+<div id="mapModal"><div id="mapContainer"><button class="closeBtn">&times;</button><div id="map"></div></div></div>
+
+<!-- SDKs -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+<script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@3/dist/email.min.js"></script>
+<script>
+/*****************  GLOBALS & CONSTANTS  *****************/
+const g=9.80665, rho=1.225, efficiency=0.23;
+let EMAILJS_USER_ID='',EMAILJS_SERVICE='',EMAILJS_TEMPLATE='';
+
+// session‑level state
+let dataPoints=[], intervalHandles=[], running=false, positions=[], rideStartTime, rideDateStr, csvContent, fname;
+let currentWind={speed:0,direction:0}, currentCdA=0;
+let gearTable=[]; // all front×rear possibilities in {front,rear,ratio}
+let cadenceRpm=0; // live cadence from BLE sensor
+
+/*****************  UTILS  *****************/
+const pad=n=>n<10?'0'+n:n;
+function makeFilename(){const d=rideStartTime;rideDateStr=`${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}`;const t=`${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;return `ride_${rideDateStr}_${t}.csv`;}
+function toCSV(rows){const header=[
+  'timestamp','latitude','longitude','altitude','speed_mps','power_w','cadence_rpm','wheel_rpm','det_front','det_rear','sug_front','sug_rear','gradient','cda','wind_speed','wind_dir'
+];const csv=[header.join(',')];rows.forEach(r=>csv.push([
+  r.timestamp,r.lat,r.lon,r.alt,r.speed,r.power,r.cadence||'',r.wheelRpm||'',r.detFront||'',r.detRear||'',r.sugFront||'',r.sugRear||'',r.gradient,r.cda,r.wind.speed,r.wind.direction
+].join(',')));return csv.join('\n');}
+function hav(lat1,lon1,lat2,lon2){const R=6371000,toRad=x=>x*Math.PI/180;const dLat=toRad(lat2-lat1),dLon=toRad(lon2-lon1);const a=Math.sin(dLat/2)**2+Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*Math.sin(dLon/2)**2;return 2*R*Math.asin(Math.sqrt(a));}
+function bearing(lat1,lon1,lat2,lon2){const toRad=x=>x*Math.PI/180,toDeg=x=>x*180/Math.PI;const dLon=toRad(lon2-lon1),y=Math.sin(dLon)*Math.cos(toRad(lat2)),x=Math.cos(toRad(lat1))*Math.sin(toRad(lat2))-Math.sin(toRad(lat1))*Math.cos(toRad(lat2))*Math.cos(dLon);return (toDeg(Math.atan2(y,x))+360)%360;}
+async function getWind(lat,lon){try{const js=await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current_weather=true&windspeed_unit=ms`).then(r=>r.json());return js.current_weather?{speed:js.current_weather.windspeed,direction:js.current_weather.winddirection}:{speed:0,direction:0};}catch{return{speed:0,direction:0};}}
+async function getElevation(lat,lon){try{const js=await fetch(`https://api.open-meteo.com/v1/elevation?latitude=${lat}&longitude=${lon}`).then(r=>r.json());return js.elevation||0;}catch{return 0;}}
+function simulatePos(bLat,bLon,e,n){const dLat=n/111320,dLon=e/(40075000*Math.cos(bLat*Math.PI/180)/360);return[bLat+dLat,bLon+dLon];}
+function autoPoseCdA(base,grad){if(grad>0.02) return base*1.10;// climbing,out‑of‑saddle
+if(grad<-0.02) return base*0.90;// descent,drops
+return base;}
+function calcPower(p1,p2,wind,user,useAuto){const dist=hav(p1.lat,p1.lon,p2.lat,p2.lon),dt=(p2.timestamp-p1.timestamp)/1000;if(dt<=0) return {power:0,speed:0,cda:user.cda,gradient:0};const speed=dist/dt,dAlt=p2.alt-p1.alt,grad=dist<1?0:dAlt/dist,theta=Math.atan(grad),course=bearing(p1.lat,p1.lon,p2.lat,p2.lon),wind_rel=wind.speed*Math.cos((wind.direction-course)*Math.PI/180),app_sp=speed+wind_rel;let cda=user.cda;if(useAuto) cda=autoPoseCdA(user.cda,grad);const mass=user.rider_mass+user.bike_mass,Fg=mass*g*Math.sin(theta),Fr=mass*g*user.crr*Math.cos(theta),Fa=0.5*rho*cda*app_sp**2,P=(Fg+Fr+Fa)*speed;return {power:Math.max(0,P),speed,cda,gradient:grad};}
+
+/*****************  GEAR HELPERS  *****************/
+function buildGearTable(frontArr,rearArr){gearTable=[];frontArr.forEach(f=>rearArr.forEach(r=>gearTable.push({front:f,rear:r,ratio:r/f})));}
+function nearestGear(ratio){let best=null,diff=1e9;gearTable.forEach(g=>{const d=Math.abs(g.ratio-ratio);if(d<diff){diff=d;best=g;}});return best;}
+function suggestGear(wheelRpm,cadMin,cadMax){if(!gearTable.length||wheelRpm<=0) return null;const target=(cadMin+cadMax)/2;let best=null,diff=1e9;gearTable.forEach(g=>{const cad=wheelRpm*g.ratio;const inside=cad>=cadMin&&cad<=cadMax;const d=Math.abs(cad-target)+(inside?0:50);if(d<diff){diff=d;best=g;}});return best;}
+
+/*****************  BLE CADENCE SENSOR  *****************/
+let cadenceCharacteristic=null,lastCrankRev=null,lastCrankEvent=null;
+async function connectCadenceSensor(){try{const device=await navigator.bluetooth.requestDevice({filters:[{services:['cycling_speed_and_cadence']}]}),server=await device.gatt.connect(),service=await server.getPrimaryService('cycling_speed_and_cadence');cadenceCharacteristic=await service.getCharacteristic('00002a5b-0000-1000-8000-00805f9b34fb');await cadenceCharacteristic.startNotifications();cadenceCharacteristic.addEventListener('characteristicvaluechanged',handleCSC);document.getElementById('connectCadenceBtn').textContent='Cadence ✔';}
+catch(err){alert('BLE error: '+err);} }
+function handleCSC(e){const d=e.target.value;const flags=d.getUint8(0);let idx=1;const wheelPresent=flags&0x1,crankPresent=flags&0x2;if(wheelPresent){idx+=6;} // ignore wheel in this app
+if(crankPresent){const rev=d.getUint16(idx,true);idx+=2;const ev=d.getUint16(idx,true);if(lastCrankRev!==null){const revDiff=(rev-lastCrankRev)&0xFFFF;const tDiff=(ev-lastCrankEvent)&0xFFFF;if(revDiff>0&&tDiff>0) cadenceRpm=(revDiff/(tDiff/1024))*60;}
+lastCrankRev=rev;lastCrankEvent=ev;}}
+
+document.getElementById('connectCadenceBtn').onclick=connectCadenceSensor;
+
+/*****************  SESSION CONTROL  *****************/
+function startSession(user,useAuto){running=true;dataPoints=[];positions=[];rideStartTime=new Date();document.getElementById('start-btn').disabled=true;document.getElementById('stop-btn').disabled=false;document.getElementById('live-stats').innerHTML='<span class="danger">Starting…</span>';document.getElementById('postEmailSection').style.display='none';
+
+// Build gear table once
+buildGearTable(user.front_rings,user.rear_cassette);
+
+let baseLat=51.05011,baseLon=-114.08529,metersEast=0,metersNorth=0,watchId=null;
+
+// SAMPLE EVERY 2 s
+intervalHandles.push(setInterval(async()=>{
+  const now=Date.now();let lat,lon,alt;
+  if(user.mode==='simulate'){
+    metersEast+=4+(Math.random()-0.5)*0.8;metersNorth+=(Math.random()-0.5)*0.3;[lat,lon]=simulatePos(baseLat,baseLon,metersEast,metersNorth);alt=1050+Math.sin(metersEast/200)*8+Math.random();
+  } else if(positions.length){const pos=positions.at(-1);lat=pos.coords.latitude;lon=pos.coords.longitude;alt=await getElevation(lat,lon);} else {document.getElementById('live-stats').innerHTML='<span class="danger">Waiting for GPS…</span>';return;}
+  currentWind=await getWind(lat,lon);
+  const prev=dataPoints.length?dataPoints.at(-1):{lat,lon,alt,timestamp:now-2000};
+  const rec=calcPower(prev,{lat,lon,alt,timestamp:now},currentWind,user,useAuto);
+  currentCdA=rec.cda;
+  // Wheel RPM & gear logic
+  const wheelRpm= user.wheel_circ>0 ? (rec.speed/user.wheel_circ)*60 : 0;
+  let detFront='',detRear='';
+  if(cadenceRpm>0&&wheelRpm>1){const ratio=cadenceRpm/wheelRpm;const g=nearestGear(ratio);if(g){detFront=g.front;detRear=g.rear;}}
+  const suggestion=suggestGear(wheelRpm,user.cad_min,user.cad_max);
+  const sugFront=suggestion? suggestion.front:'';const sugRear=suggestion? suggestion.rear:'';
+
+  dataPoints.push({...rec,timestamp:now,lat,lon,alt,wind:currentWind,cadence:cadenceRpm,wheelRpm,detFront,detRear,sugFront,sugRear});
+  updateStats({power:rec.power,speed:rec.speed,grad:rec.gradient,sugFront,sugRear,detFront,detRear});
+},2000));
+
+if(user.mode==='gps'&&navigator.geolocation){watchId=navigator.geolocation.watchPosition(p=>positions.push(p),e=>document.getElementById('live-stats').innerHTML=`<span class="danger">GPS error: ${e.message}</span>`,{enableHighAccuracy:true,maximumAge:1500,timeout:6000});}
+
+document.getElementById('stop-btn').onclick=()=>{running=false;if(watchId)navigator.geolocation.clearWatch(watchId);intervalHandles.forEach(h=>clearInterval(h));intervalHandles=[];document.getElementById('start-btn').disabled=false;document.getElementById('stop-btn').disabled=true;endSession(user);};}
+
+function updateStats(state){const P=state.power.toFixed(0),V=(state.speed*3.6).toFixed(1),G=(state.grad*100).toFixed(1),SG=state.sugFront?`${state.sugFront}&times;${state.sugRear}`:'—',DG=state.detFront?`${state.detFront}&times;${state.detRear}`:'—';document.getElementById('live-stats').innerHTML=`<strong>Live 2 s:</strong><br>Power: ${P} W · Speed: ${V} km/h · Gradient: ${G}%<br>Cadence: ${cadenceRpm.toFixed(0)} rpm<br>Detected gear: <strong>${DG}</strong><br>Suggested gear: <strong>${SG}</strong>`;}
+
+function endSession(user){const clean=dataPoints.filter(r=>r.power>0);if(!clean.length) return;const avgP=clean.reduce((s,r)=>s+r.power,0)/clean.length,avgV=clean.reduce((s,r)=>s+r.speed,0)/clean.length,joules=clean.reduce((s,r,i,a)=>i?s+r.power*((r.timestamp-a[i-1].timestamp)/1000):s,0),cals=(joules/efficiency/4184).toFixed(1),elev=clean.reduce((s,r,i,a)=>i&&((d=a[i].alt-a[i-1].alt)>0.3)?s+d:s,0).toFixed(1);document.getElementById('summary').innerHTML=`<h3>Ride Summary</h3><table><tr><th>Avg Power</th><td>${avgP.toFixed(1)} W</td></tr><tr><th>Avg Speed</th><td>${(avgV*3.6).toFixed(1)} km/h</td></tr><tr><th>Calories</th><td>${cals} kcal</td></tr><tr><th>Elev Gain</th><td>${elev} m</td></tr></table>`;
+  csvContent=toCSV(dataPoints);fname=makeFilename();const blob=new Blob([csvContent],{type:'text/csv'});const url=URL.createObjectURL(blob);document.getElementById('csv-download').innerHTML=`<a href="${url}" download="${fname}">Download ${fname}</a>`;
+  // email controls same as before ...
+  EMAILJS_USER_ID=document.getElementById('emailjs_user_id')?.value||EMAILJS_USER_ID;EMAILJS_SERVICE=document.getElementById('emailjs_service_id')?.value||EMAILJS_SERVICE;EMAILJS_TEMPLATE=document.getElementById('emailjs_template_id')?.value||EMAILJS_TEMPLATE;
+  const preEmail=document.getElementById('email').value.trim();if(preEmail&&EMAILJS_USER_ID&&EMAILJS_SERVICE&&EMAILJS_TEMPLATE){emailjs.init(EMAILJS_USER_ID);emailjs.send(EMAILJS_SERVICE,EMAILJS_TEMPLATE,{to_email:preEmail,ride_filename:fname,ride_data:csvContent}).then(()=>alert('CSV emailed to '+preEmail)).catch(e=>alert('Could not send email: '+e.message));}else{document.getElementById('postEmailSection').style.display='block';}
+  showMap();}
+
+/*****************  MAP  *****************/
+function showMap(){const modal=document.getElementById('mapModal');modal.style.display='flex';setTimeout(()=>{const map=L.map('map').setView([dataPoints[0].lat,dataPoints[0].lon],13);L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap'}).addTo(map);const latlngs=dataPoints.map(r=>[r.lat,r.lon]);const poly=L.polyline(latlngs,{color:'blue'}).addTo(map);map.fitBounds(poly.getBounds());poly.on('click',e=>{let min=1e9,idx=0;dataPoints.forEach((r,i)=>{const d=hav(r.lat,r.lon,e.latlng.lat,e.latlng.lng);if(d<min){min=d;idx=i;}});const r=dataPoints[idx];const d=new Date(r.timestamp);const info=`<strong>${d.toLocaleString()}</strong><br>Power: ${r.power.toFixed(1)} W · Speed: ${(r.speed*3.6).toFixed(1)} km/h<br>Cadence: ${r.cadence.toFixed(0)} rpm<br>Gear: ${r.detFront?`${r.detFront}&times;${r.detRear}`:'–'}<br>Suggested: ${r.sugFront?`${r.sugFront}&times;${r.sugRear}`:'–'}<br>Gradient: ${(r.gradient*100).toFixed(1)}%<br>Wind: ${r.wind.speed.toFixed(1)} m/s @${r.wind.direction.toFixed(0)}°<br>CdA: ${r.cda.toFixed(2)} m²<br>Lat: ${r.lat.toFixed(5)} · Lon: ${r.lon.toFixed(5)} · Alt: ${r.alt.toFixed(1)} m`;L.popup().setLatLng([r.lat,r.lon]).setContent(info).openOn(map);});document.querySelector('#mapContainer .closeBtn').onclick=()=>{modal.style.display='none';map.remove();};},100);} 
+
+/*****************  SETTINGS SUMMARY & INIT  *****************/
+function updateSettingsSummary(){const base=parseFloat(document.getElementById('cda').value),auto=document.getElementById('auto_pose').checked;document.getElementById('settings-summary').textContent=auto?`Auto CdA: climbs ${(base*1.10).toFixed(2)} / flats ${base.toFixed(2)} / desc ${(base*0.90).toFixed(2)} m²`:`Fixed CdA ${base.toFixed(2)} m²`;}
+document.getElementById('auto_pose').onchange=updateSettingsSummary;document.getElementById('cda').oninput=updateSettingsSummary;updateSettingsSummary();
+
+/*****************  START BUTTON  *****************/
+document.getElementById('start-btn').onclick=()=>{if(running) return;const user={mode:document.getElementById('mode').value,rider_mass:parseFloat(document.getElementById('rider_mass').value),bike_mass:parseFloat(document.getElementById('bike_mass').value),ftp:parseFloat(document.getElementById('ftp').value),cda:parseFloat(document.getElementById('cda').value),crr:parseFloat(document.getElementById('crr').value),cad_min:parseFloat(document.getElementById('cad_min').value),cad_max:parseFloat(document.getElementById('cad_max').value),front_rings:document.getElementById('front_rings').value.split(',').map(x=>parseInt(x.trim())).filter(x=>!isNaN(x)),rear_cassette:document.getElementById('rear_cassette').value.split(',').map(x=>parseInt(x.trim())).filter(x=>!isNaN(x)),wheel_circ:parseFloat(document.getElementById('wheel_circ').value)||2.105,crank_len:parseFloat(document.getElementById('crank_len').value)||170};if(!user.front_rings.length||!user.rear_cassette.length){alert('Enter valid drivetrain details');return;}startSession(user,document.getElementById('auto_pose').checked);};
+
+document.getElementById('stop-btn').onclick=()=>{};
+
+document.getElementById('send-post-btn').onclick=async()=>{const addr=document.getElementById('post_email').value.trim();EMAILJS_USER_ID=document.getElementById('emailjs_user_id').value.trim();EMAILJS_SERVICE=document.getElementById('emailjs_service_id').value.trim();EMAILJS_TEMPLATE=document.getElementById('emailjs_template_id').value.trim();if(!addr) return alert('Please enter a valid email.');if(!EMAILJS_USER_ID||!EMAILJS_SERVICE||!EMAILJS_TEMPLATE) return alert('EmailJS credentials missing.');try{emailjs.init(EMAILJS_USER_ID);await emailjs.send(EMAILJS_SERVICE,EMAILJS_TEMPLATE,{to_email:addr,ride_filename:fname,ride_data:csvContent});alert('CSV emailed to '+addr);document.getElementById('postEmailSection').style.display='none';}catch(e){alert('Could not send email: '+e.message);} };
+</script>
+</body>
+</html>
